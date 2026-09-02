@@ -11,4 +11,3 @@ ORBIT automatically matches lost and found item reports using a C++ core engine 
 - Husain Khan, Aly
 - Gupta, Priyanshu
 - Singh, Gaurav
-- Kotnala, Aditya
