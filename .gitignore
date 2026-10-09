@@ -5,3 +5,5 @@ build/
 *.o
 .env
 .vscode/
+*.md
+!README.md
