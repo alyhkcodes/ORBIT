@@ -1,9 +1,28 @@
+# Node.js dependencies and generated output
 node_modules/
 dist/
+
+# CMake build output
 build/
+cmake-build-*/
+/backend/Engine/build/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+
+# Compiled artifacts
 *.exe
 *.o
+*.obj
+
+# Local reports contain user-entered contact details
+/data/reports.json
+
+# Local configuration and editor files
 .env
+.env.*
+!.env.example
 .vscode/
-*.md
-!README.md
+
+# Keep local architecture notes out of the public repository
+/context.md
