@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORBIT</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f1220; color: #eee; max-width: 900px; margin: 0 auto; padding: 20px; }
+    h1 { color: #7c9cff; }
+    form { display: grid; gap: 8px; background: #1a1f36; padding: 16px; border-radius: 10px; }
+    input, select, button { padding: 10px; border-radius: 6px; border: none; font-size: 14px; }
+    button { background: #7c9cff; color: #000; cursor: pointer; font-weight: bold; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 16px; }
+    .card { background: #1a1f36; padding: 14px; border-radius: 10px; border-left: 5px solid #888; }
+    .card.LOST { border-color: #ff6b6b; }
+    .card.FOUND { border-color: #51cf66; }
+    .card.done { opacity: 0.5; }
+    .tag { font-size: 12px; font-weight: bold; }
+    .small { font-size: 13px; color: #aaa; margin: 4px 0; }
+    .match { margin-top: 8px; width: 100%; }
+    .resolve { margin-top: 8px; width: 100%; background: #51cf66; }
+    pre.res { white-space: pre-wrap; font-size: 12px; background: #0f1220; padding: 8px; border-radius: 6px; color: #cfd6ff; }
+
+    .typepick { display: flex; gap: 8px; }
+    .typebtn { flex: 1; padding: 12px; background: #2a3050; color: #cfd6ff; font-weight: normal; }
+    .typebtn.on[data-v="lost"] { background: #ff6b6b; color: #000; font-weight: bold; }
+    .typebtn.on[data-v="found"] { background: #51cf66; color: #000; font-weight: bold; }
+
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #1a1f36; padding: 12px; border-radius: 10px; }
+    .bar input { flex: 1; min-width: 180px; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip { background: #2a3050; color: #cfd6ff; padding: 8px 12px; font-weight: normal; }
+    .chip.on { background: #7c9cff; color: #000; font-weight: bold; }
+    .count { font-size: 13px; color: #aaa; margin-top: 10px; }
+    .empty { color: #aaa; padding: 20px; text-align: center; grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+  <h1>ORBIT: Lost & Found</h1>
+
+  <h2>Report an item</h2>
+  <form id="f">
+    <input type="hidden" name="type" id="typeVal" value="lost">
+    <div class="typepick" id="typePick">
+      <button type="button" class="typebtn on" data-v="lost">Lost</button>
+      <button type="button" class="typebtn" data-v="found">Found</button>
+    </div>
+    <input name="title" placeholder="Title" required>
+    <input name="category" placeholder="Category" required>
+    <input name="description" placeholder="Description" required>
+    <input name="location" placeholder="Location" required>
+    <input name="datetime" placeholder="Date/time" required>
+    <button type="submit">Submit</button>
+  </form>
+
+  <h2>All items</h2>
+
+  <div class="bar">
+    <input id="q" placeholder="Search title, category, description, location...">
+    <div class="chips" id="typeChips">
+      <button class="chip on" data-v="ALL">All</button>
+      <button class="chip" data-v="LOST">Lost</button>
+      <button class="chip" data-v="FOUND">Found</button>
+    </div>
+    <div class="chips" id="statusChips">
+      <button class="chip on" data-v="ALL">Any status</button>
+      <button class="chip" data-v="ACTIVE">Active</button>
+      <button class="chip" data-v="RESOLVED">Resolved</button>
+    </div>
+  </div>
+  <div class="count" id="count"></div>
+
+  <div class="grid" id="items"></div>
+
+  <script>
+    let allItems = [];
+    let typeFilter = 'ALL';
+    let statusFilter = 'ALL';
+    let query = '';
+
+    async function findMatches(id, pre, btn) {
+      btn.disabled = true;
+      pre.textContent = 'Searching...';
+      try {
+        const res = await fetch('/api/match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        let t = data.output || '';
+        const a = t.indexOf('LOST item:');
+        if (a >= 0) t = t.slice(a + 10);
+        const b = t.lastIndexOf('========== ORBIT');
+        if (b >= 0) t = t.slice(0, b);
+        pre.textContent = t.trim();
+      } catch (e) {
+        pre.textContent = 'Error: ' + e;
+      }
+      btn.disabled = false;
+    }
+
+    async function resolveItem(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Resolving...';
+      try {
+        await fetch('/api/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+      } catch (e) {}
+      loadItems();
+    }
+
+    function render() {
+      const box = document.getElementById('items');
+      box.innerHTML = '';
+      const q = query.trim().toLowerCase();
+
+      const shown = allItems.slice().reverse().filter(i => {
+        if (typeFilter !== 'ALL' && i.type !== typeFilter) return false;
+        if (statusFilter === 'ACTIVE' && i.resolved) return false;
+        if (statusFilter === 'RESOLVED' && !i.resolved) return false;
+        if (q) {
+          const hay = (i.title + ' ' + i.category + ' ' + i.description + ' ' + i.location + ' ' + i.datetime).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      document.getElementById('count').textContent =
+        'Showing ' + shown.length + ' of ' + allItems.length + ' items';
+
+      if (shown.length === 0) {
+        const e = document.createElement('div');
+        e.className = 'empty';
+        e.textContent = 'No items match your filters.';
+        box.appendChild(e);
+        return;
+      }
+
+      shown.forEach(i => {
+        const d = document.createElement('div');
+        d.className = 'card ' + i.type + (i.resolved ? ' done' : '');
+        d.innerHTML =
+          '<div class="tag">' + i.type + (i.resolved ? ' · RESOLVED' : '') + ' · #' + i.id + '</div>' +
+          '<h3></h3>' +
+          '<div class="small cat"></div>' +
+          '<div class="small desc"></div>' +
+          '<div class="small loc"></div>';
+        d.querySelector('h3').textContent = i.title;
+        d.querySelector('.cat').textContent = 'Category: ' + i.category;
+        d.querySelector('.desc').textContent = i.description;
+        d.querySelector('.loc').textContent = i.location + ' · ' + i.datetime;
+
+        if (i.type === 'LOST' && !i.resolved) {
+          const btn = document.createElement('button');
+          btn.className = 'match';
+          btn.textContent = 'Find matches';
+          const pre = document.createElement('pre');
+          pre.className = 'res';
+          btn.onclick = () => findMatches(i.id, pre, btn);
+          d.appendChild(btn);
+          d.appendChild(pre);
+        }
+
+        if (!i.resolved) {
+          const rb = document.createElement('button');
+          rb.className = 'resolve';
+          rb.textContent = 'Mark resolved';
+          rb.onclick = () => resolveItem(i.id, rb);
+          d.appendChild(rb);
+        }
+
+        box.appendChild(d);
+      });
+    }
+
+    async function loadItems() {
+      const res = await fetch('/api/data');
+      allItems = await res.json();
+      render();
+    }
+
+    function setupChips(id, onPick) {
+      const wrap = document.getElementById(id);
+      wrap.addEventListener('click', e => {
+        const b = e.target.closest('.chip');
+        if (!b) return;
+        wrap.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+        b.classList.add('on');
+        onPick(b.dataset.v);
+        render();
+      });
+    }
+
+    setupChips('typeChips', v => { typeFilter = v; });
+    setupChips('statusChips', v => { statusFilter = v; });
+
+    function setType(v) {
+      document.getElementById('typeVal').value = v;
+      document.querySelectorAll('#typePick .typebtn').forEach(b => {
+        b.classList.toggle('on', b.dataset.v === v);
+      });
+    }
+
+    document.getElementById('typePick').addEventListener('click', e => {
+      const b = e.target.closest('.typebtn');
+      if (b) setType(b.dataset.v);
+    });
+
+    document.getElementById('q').addEventListener('input', e => {
+      query = e.target.value;
+      render();
+    });
+
+    document.getElementById('f').addEventListener('submit', async e => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(e.target));
+      await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      e.target.reset();
+      setType('lost');
+      loadItems();
+    });
+
+    loadItems();
+  </script>
+</body>
+</html>
