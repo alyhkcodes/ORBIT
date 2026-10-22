@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORBIT</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f1220; color: #eee; max-width: 900px; margin: 0 auto; padding: 20px; }
+    h1 { color: #7c9cff; }
+    form { display: grid; gap: 8px; background: #1a1f36; padding: 16px; border-radius: 10px; }
+    input, select, button { padding: 10px; border-radius: 6px; border: none; font-size: 14px; }
+    button { background: #7c9cff; color: #000; cursor: pointer; font-weight: bold; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 16px; }
+    .card { background: #1a1f36; padding: 14px; border-radius: 10px; border-left: 5px solid #888; }
+    .card.LOST { border-color: #ff6b6b; }
+    .card.FOUND { border-color: #51cf66; }
+    .card.done { opacity: 0.5; }
+    .tag { font-size: 12px; font-weight: bold; }
+    .small { font-size: 13px; color: #aaa; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <h1>ORBIT: Lost & Found</h1>
+
+  <h2>Report an item</h2>
+  <form id="f">
+    <select name="type">
+      <option value="lost">Lost</option>
+      <option value="found">Found</option>
+    </select>
+    <input name="title" placeholder="Title" required>
+    <input name="category" placeholder="Category" required>
+    <input name="description" placeholder="Description" required>
+    <input name="location" placeholder="Location" required>
+    <input name="datetime" placeholder="Date/time" required>
+    <button type="submit">Submit</button>
+  </form>
+
+  <h2>All items</h2>
+  <div class="grid" id="items"></div>
+
+  <script>
+    async function loadItems() {
+      const res = await fetch('/api/data');
+      const items = await res.json();
+      const box = document.getElementById('items');
+      box.innerHTML = '';
+      items.slice().reverse().forEach(i => {
+        const d = document.createElement('div');
+        d.className = 'card ' + i.type + (i.resolved ? ' done' : '');
+        d.innerHTML =
+          '<div class="tag">' + i.type + (i.resolved ? ' · RESOLVED' : '') + ' · #' + i.id + '</div>' +
+          '<h3></h3>' +
+          '<div class="small cat"></div>' +
+          '<div class="small desc"></div>' +
+          '<div class="small loc"></div>';
+        d.querySelector('h3').textContent = i.title;
+        d.querySelector('.cat').textContent = 'Category: ' + i.category;
+        d.querySelector('.desc').textContent = i.description;
+        d.querySelector('.loc').textContent = i.location + ' · ' + i.datetime;
+        box.appendChild(d);
+      });
+    }
+
+    document.getElementById('f').addEventListener('submit', async e => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(e.target));
+      await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      e.target.reset();
+      loadItems();
+    });
+
+    loadItems();
+  </script>
+</body>
+</html>
