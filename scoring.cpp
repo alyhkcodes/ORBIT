@@ -1,159 +1,79 @@
-#include <iostream>
-#include <vector>
-#include <string>
-#include <unordered_map>
-#include <cmath>
+#include "scoring.h"
+
 #include <algorithm>
-using namespace std;
+#include <cctype>
+#include <cmath>
+#include <sstream>
 
+std::vector<std::string> tokenize(const std::string& text) {
+    std::vector<std::string> tokens;
+    std::istringstream input(text);
+    std::string token;
 
-// function to split a document into words
-vector<string> tokenize(const string& text) {
-    vector<string> tokens;
-    string word = "";
-    for (int i = 0; i < (int)text.size(); i++) {
-        char c = text[i];
-        if (isspace(c)) {
-            if (!word.empty()) {
-                tokens.push_back(word);
-                word = "";
-            }
-        } else {
-            word += c;
-        }
+    while (input >> token) {
+        token.erase(std::remove_if(token.begin(), token.end(), [](unsigned char c) {
+            return !std::isalnum(c);
+        }), token.end());
+        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (!token.empty()) tokens.push_back(token);
     }
-    if (!word.empty()) tokens.push_back(word);
     return tokens;
 }
 
-// Inverted Index
-struct Posting {
-    int docID;
-    int frequency;
-};
-
-class InvertedIndex {
-public:
-    unordered_map<string, vector<Posting>> index;
-
-    void build(const vector<string>& documents) {
-        for (int docID = 0; docID < (int)documents.size(); docID++) {
-            vector<string> tokens = tokenize(documents[docID]);
-            unordered_map<string, int> termCount;
-
-            for (int i = 0; i < (int)tokens.size(); i++) {
-                string term = tokens[i];
-                termCount[term]++;
-            }
-
-            for (unordered_map<string, int>::iterator it = termCount.begin(); it != termCount.end(); ++it) {
-                string term = it->first;
-                int freq = it->second;
-                index[term].push_back({docID, freq});
-            }
+void InvertedIndex::build(const std::vector<std::vector<std::string>>& documents) {
+    index.clear();
+    for (int docID = 0; docID < static_cast<int>(documents.size()); ++docID) {
+        std::unordered_map<std::string, int> frequencies;
+        for (const auto& term : documents[docID]) ++frequencies[term];
+        for (const auto& entry : frequencies) {
+            index[entry.first].push_back({docID, entry.second});
         }
     }
+}
 
-    vector<Posting> getPostings(const string& term) {
-        if (index.find(term) != index.end()) {
-            return index[term];
+const std::vector<Posting>& InvertedIndex::getPostings(const std::string& term) const {
+    static const std::vector<Posting> empty;
+    const auto found = index.find(term);
+    return found == index.end() ? empty : found->second;
+}
+
+int InvertedIndex::docFrequency(const std::string& term) const {
+    const auto found = index.find(term);
+    return found == index.end() ? 0 : static_cast<int>(found->second.size());
+}
+
+BM25::BM25(const std::vector<std::string>& sourceDocuments, double k1Value, double bValue)
+    : avgDocLength(0.0), k1(k1Value), b(bValue) {
+    std::vector<std::vector<std::string>> documents;
+    for (const auto& document : sourceDocuments) {
+        documents.push_back(tokenize(document));
+        avgDocLength += documents.back().size();
+    }
+    if (!documents.empty()) avgDocLength /= documents.size();
+    this->documents = std::move(documents);
+    invertedIndex.build(this->documents);
+}
+
+double BM25::idf(const std::string& term) const {
+    const double count = static_cast<double>(documents.size());
+    const double frequency = invertedIndex.docFrequency(term);
+    return std::log(1.0 + (count - frequency + 0.5) / (frequency + 0.5));
+}
+
+std::unordered_map<int, double> BM25::score(const std::string& query) const {
+    std::unordered_map<int, double> scores;
+    if (documents.empty() || avgDocLength == 0.0) return scores;
+
+    for (const auto& term : tokenize(query)) {
+        const double termIdf = idf(term);
+        for (const auto& posting : invertedIndex.getPostings(term)) {
+            const double length = documents[posting.docID].size();
+            const double frequency = posting.frequency;
+            const double denominator = frequency + k1 * (1.0 - b + b * length / avgDocLength);
+            scores[posting.docID] += termIdf * frequency * (k1 + 1.0) / denominator;
         }
-        return vector<Posting>();
     }
-
-    int docFrequency(const string& term) {
-        if (index.find(term) != index.end()) {
-            return (int)index[term].size();
-        }
-        return 0;
-    }
-};
-
-
-
-// BM25
-class BM25 {
-    vector<vector<string>> corpus;      // All documents, tokenized
-    double avgDocLength;               // Average document length
-    double k1;                         // Saturation parameter
-    double b;                          // Length normalization parameter
-    InvertedIndex invertedIndex;
-
-public:
-    BM25(const vector<string>& documents, double k1Value = 1.2, double bValue = 0.75) {
-        k1 = k1Value;
-        b = bValue;
-        int totalLength = 0;
-
-        for (int i = 0; i < (int)documents.size(); i++) {
-            vector<string> tokens = tokenize(documents[i]);
-            corpus.push_back(tokens);
-            totalLength += (int)tokens.size();
-        }
-
-        avgDocLength = (double)totalLength / documents.size();
-        invertedIndex.build(documents);
-    }
-
-    double idf(const string& term) {
-        int N = (int)corpus.size();
-        int df = invertedIndex.docFrequency(term);
-        return log((N - df + 0.5) / (df + 0.5) + 1);    // BM25 Calculation
-    }
-
-    // Compute BM25 score for a query against all documents
-    unordered_map<int, double> score(const string& query) {
-        vector<string> queryTokens = tokenize(query);
-        unordered_map<int, double> scores;
-
-        for (int i = 0; i < (int)queryTokens.size(); i++) {
-            string term = queryTokens[i];
-            vector<Posting> postings = invertedIndex.getPostings(term);
-            double idfValue = idf(term);
-
-            for (int j = 0; j < (int)postings.size(); j++) {
-                int docID = postings[j].docID;
-                int docLen = (int)corpus[docID].size();
-                double f = postings[j].frequency;
-
-                double numerator = f * (k1 + 1);
-                double denominator = f + k1 * (1 - b + b * ((double)docLen / avgDocLength));
-                double termScore = idfValue * (numerator / denominator);
-                scores[docID] += termScore;
-            }
-        }
-        return scores;
-    }
-};
-
-
-
-// Example
-int main() {
-    vector<string> docs;
-    docs.push_back("black leather wallet found near park");
-    docs.push_back("lost mobile phone with blue cover");
-    docs.push_back("brown purse found at bus stop");
-
-    BM25 bm(docs);
-
-    string query = "lost wallet";
-    unordered_map<int, double> scores = bm.score(query);
-
-    // Convert map to vector for sorting
-    vector<pair<int, double>> ranked;
-    for (unordered_map<int, double>::iterator it = scores.begin(); it != scores.end(); ++it) {
-        ranked.push_back(make_pair(it->first, it->second));
-    }
-
-    // Sort results by score
-    sort(ranked.begin(), ranked.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
-        return a.second > b.second;
-    });
-
-    for (int i = 0; i < (int)ranked.size(); i++) {
-        cout << "Doc " << ranked[i].first << " score: " << ranked[i].second << endl;
-    }
-
-    return 0;
+    return scores;
 }

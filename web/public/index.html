@@ -33,6 +33,8 @@
     .chip.on { background: #7c9cff; color: #000; font-weight: bold; }
     .count { font-size: 13px; color: #aaa; margin-top: 10px; }
     .empty { color: #aaa; padding: 20px; text-align: center; grid-column: 1 / -1; }
+    .notice { padding: 10px; border-radius: 6px; background: #2a3050; }
+    .notice.error { background: #5b252c; color: #ffe3e6; }
   </style>
 </head>
 <body>
@@ -52,6 +54,7 @@
     <input name="datetime" placeholder="Date/time" required>
     <button type="submit">Submit</button>
   </form>
+  <p id="reportStatus" class="notice" role="status" aria-live="polite" hidden></p>
 
   <h2>All items</h2>
 
@@ -217,15 +220,33 @@
 
     document.getElementById('f').addEventListener('submit', async e => {
       e.preventDefault();
+      const form = e.target;
+      const submit = form.querySelector('button[type="submit"]');
+      const status = document.getElementById('reportStatus');
       const body = Object.fromEntries(new FormData(e.target));
-      await fetch('/api/report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      e.target.reset();
-      setType('lost');
-      loadItems();
+      status.hidden = true;
+      status.classList.remove('error');
+      submit.disabled = true;
+      try {
+        const res = await fetch('/api/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Could not save the report.');
+        form.reset();
+        setType('lost');
+        await loadItems();
+        status.textContent = 'Report saved.';
+        status.hidden = false;
+      } catch (error) {
+        status.textContent = `Report was not saved: ${error.message}`;
+        status.classList.add('error');
+        status.hidden = false;
+      } finally {
+        submit.disabled = false;
+      }
     });
 
     loadItems();

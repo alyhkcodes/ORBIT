@@ -10,11 +10,20 @@ const ROOT = path.join(__dirname, '..');
 
 function runOrbit(input) {
   return new Promise((resolve, reject) => {
-    const p = spawn(path.join(ROOT, 'orbit.exe'), [], { cwd: ROOT });
+    const executable = path.join(ROOT, process.platform === 'win32' ? 'orbit.exe' : 'orbit');
+    const p = spawn(executable, [], { cwd: ROOT });
     let out = '';
+    let err = '';
     p.stdout.on('data', d => (out += d));
+    p.stderr.on('data', d => (err += d));
     p.on('error', reject);
-    p.on('close', () => resolve(out));
+    p.on('close', code => {
+      if (code !== 0) {
+        reject(new Error(err.trim() || `orbit exited with code ${code}`));
+        return;
+      }
+      resolve(out);
+    });
     p.stdin.write(input);
     p.stdin.end();
   });
@@ -58,15 +67,6 @@ app.get('/api/data', (req, res) => {
       resolved: m[8] === '1'
     }));
     res.json(items);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
-app.post('/api/match', async (req, res) => {
-  try {
-    const id = String(Number(req.body.id) || 0);
-    const out = await runOrbit(['4', id, '0'].join('\n') + '\n');
-    res.json({ output: out });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
